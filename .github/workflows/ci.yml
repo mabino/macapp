@@ -2,11 +2,11 @@ name: CI - build & smoke
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
     # only run workflow on version tags starting with 'v' (e.g. v1.2.0)
     tags: ['v*']
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
   build-and-smoke:
