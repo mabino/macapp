@@ -184,6 +184,42 @@ CI notes
   PRUNE_BUNDLE=1 PRUNE_LEVEL=moderate python3 setup.py py2app
   THE_EXAMPLE_SMOKE=1 THE_EXAMPLE_SMOKE_OUT=$GITHUB_WORKSPACE/dist/smoke.json $GITHUB_WORKSPACE/dist/The\ Example.app/Contents/MacOS/The\ Example
 
+Releases via tags
+-----------------
+This repository only creates a GitHub Release when the workflow runs for a tag push that starts with `v` (for example `v1.2.0`). The CI will still run on branch pushes and PRs for validation, but only version tags produce an official Release with attached pruned artifacts.
+
+How to create a release (locally):
+
+1. Create an annotated tag (must start with `v`) and push it:
+
+```bash
+# create tag for version v1.2.0
+git tag -a v1.2.0 -m "release v1.2.0"
+git push origin v1.2.0
+```
+
+2. The GitHub Actions workflow will run for this tag and, on success, create a Release named `Pruned macOS build v1.2.0` and attach:
+
+- `The-Example-macos-pruned.zip`
+- `The-Example-macos-pruned.zip.sha256`
+
+Verifying the checksum locally
+-----------------------------
+After downloading the zip and the `.sha256` file you can verify the checksum on macOS/Linux with:
+
+```bash
+# verify the file; the tool will print OK if the checksum matches
+shasum -a 256 -c The-Example-macos-pruned.zip.sha256
+```
+
+If you prefer manual checking, run:
+
+```bash
+shasum -a 256 The-Example-macos-pruned.zip
+# compare output to contents of The-Example-macos-pruned.zip.sha256
+cat The-Example-macos-pruned.zip.sha256
+```
+
 Code signing & notarization (distribution)
 ------------------------------------------
 - This repo does NOT perform code signing or notarization. For distribution outside your machine you should:

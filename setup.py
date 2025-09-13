@@ -162,6 +162,9 @@ OPTIONS = {
         'LSBackgroundOnly': False,
         'LSUIElement': False,
     },
+    # Avoid automatic ad-hoc codesigning during CI where codesign may fail.
+    # Setting an empty identity tells py2app not to attempt ad-hoc signing.
+    'codesign_identity': '',
 }
 
 setup(
