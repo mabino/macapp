@@ -61,3 +61,66 @@ the-example-smoke*.json
 # Ignore OS swap files
 *~
 *.swp
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+env/
+.venv/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+*.app
+*.dSYM
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# py2app / bundling leftovers
+dist/*.app
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+pip-log.txt
+pip-delete-this-directory.txt
+npm-debug.log*
+
+# Compiled extensions / native libs
+*.so
+*.dylib
+
+# Misc
+.python-version
+.mypy_cache/
+coverage.xml
+
+# Local smoke files (optional)
+the-example-smoke*.txt
+the-example-smoke*.json
+
+# Ignore OS swap files
+*~
+*.swp
