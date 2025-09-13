@@ -11,6 +11,8 @@ on:
 jobs:
   build-and-smoke:
     runs-on: macos-latest
+    outputs:
+      artifact-name: The-Example-macos-pruned
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,14 +55,12 @@ jobs:
       - name: Zip pruned .app
         run: |
           cd dist
-          # create reproducible zip (quiet, recurse, preserve symlinks)
           zip -qry The-Example-macos-pruned.zip "The Example.app"
           ls -lah The-Example-macos-pruned.zip
 
       - name: Generate sha256 checksum
         run: |
           cd dist
-          # use shasum on macOS
           shasum -a 256 The-Example-macos-pruned.zip | awk '{print $1 "  " $2}' > The-Example-macos-pruned.zip.sha256
           echo 'SHA256:'
           cat The-Example-macos-pruned.zip.sha256
@@ -73,9 +73,21 @@ jobs:
             dist/The-Example-macos-pruned.zip
             dist/The-Example-macos-pruned.zip.sha256
 
+  release:
+    needs: build-and-smoke
+    if: startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download pruned artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: The-Example-macos-pruned
+          path: dist
 
       - name: Create GitHub release
-        if: startsWith(github.ref_name, 'v')
         id: create_release
         uses: actions/create-release@v1
         with:
@@ -88,7 +100,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Annotate release with checksum
-        if: startsWith(github.ref_name, 'v')
         uses: actions/github-script@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -106,7 +117,6 @@ jobs:
             });
 
       - name: Upload zip to GitHub Release
-        if: startsWith(github.ref_name, 'v')
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -117,7 +127,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload checksum to GitHub Release
-        if: startsWith(github.ref_name, 'v')
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
