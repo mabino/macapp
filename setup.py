@@ -90,6 +90,30 @@ if chosen:
 else:
     print('No libffi candidate found to bundle; proceeding without explicit libffi')
 
+# Add PySide6 and Qt6 dylibs to frameworks to ensure they are bundled
+# These are required at runtime and may not be automatically included by py2app
+pyside_dylibs = [
+    '/Users/mabino/Downloads/macapp/venv/lib/python3.13/site-packages/shiboken6/libshiboken6.abi3.6.9.dylib',
+    '/Users/mabino/Downloads/macapp/venv/lib/python3.13/site-packages/PySide6/libpyside6.abi3.6.9.dylib',
+    '/Users/mabino/Downloads/macapp/venv/lib/python3.13/site-packages/PySide6/libpyside6qml.abi3.6.9.dylib',
+]
+
+qt_dylibs = [
+    '/Users/mabino/homebrew/Caskroom/miniconda/base/envs/macapp/lib/libQt6Core.6.dylib',
+    '/Users/mabino/homebrew/Caskroom/miniconda/base/envs/macapp/lib/libQt6Gui.6.dylib',
+    '/Users/mabino/homebrew/Caskroom/miniconda/base/envs/macapp/lib/libQt6Widgets.6.dylib',
+    '/Users/mabino/homebrew/Caskroom/miniconda/base/envs/macapp/lib/libicui18n.75.dylib',
+    '/Users/mabino/homebrew/Caskroom/miniconda/base/envs/macapp/lib/libicuuc.75.dylib',
+    '/Users/mabino/homebrew/Caskroom/miniconda/base/envs/macapp/lib/libicudata.75.dylib',
+]
+
+for dylib in pyside_dylibs + qt_dylibs:
+    if os.path.exists(dylib):
+        frameworks.append(dylib)
+        print(f'Bundling required dylib: {dylib}')
+    else:
+        print(f'Warning: required dylib not found: {dylib}')
+
 OPTIONS = {
     'argv_emulation': True,
     'iconfile': None,
