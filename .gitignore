@@ -78,3 +78,7 @@ the-example-smoke*.json
 # Ignore OS swap files
 *~
 *.swp
+
+# Build logs produced during packaging
+build_py2app.log
+build_py2app_pruned.log
