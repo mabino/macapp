@@ -1,0 +1,8 @@
+# Requirements for The Example macOS app
+# Install with: pip install -r requirements.txt
+
+# PySide6 provides Qt bindings used by main.py
+PySide6>=6.5.0
+
+# py2app is used to build a macOS .app bundle from the Python script
+py2app>=0.28.8

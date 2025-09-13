@@ -1,0 +1,128 @@
+name: macOS Smoke Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  smoke:
+    name: Smoke test on macOS
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Create and activate venv
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Run JSON smoke test
+        env:
+          THE_EXAMPLE_SMOKE: '1'
+          THE_EXAMPLE_SMOKE_OUT: ${{ github.workspace }}/the-example-smoke.json
+        run: |
+          set -e
+          source .venv/bin/activate
+          # Run the app which will exit with 0 on success, 1 on failure.
+          python3 main.py
+
+      - name: Upload smoke JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-json
+          path: the-example-smoke.json
+
+  build_and_smoke:
+    name: Build .app with py2app and run smoke test
+    runs-on: macos-latest
+    needs: smoke
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Create and activate venv
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+
+      - name: Install Homebrew libffi
+        run: |
+          # Install libffi to ensure a compatible dylib is available
+          brew update || true
+          brew install libffi || true
+          echo "brew prefix: $(brew --prefix libffi)"
+
+      - name: Copy libffi into venv so setup.py can bundle it
+        run: |
+          source .venv/bin/activate
+          mkdir -p .venv/lib
+          LIBFFI_PREFIX=$(brew --prefix libffi)
+          # pick the first matching libffi dylib
+          LIBPATH=$(ls ${LIBFFI_PREFIX}/lib/libffi*.dylib 2>/dev/null | head -n1 || true)
+          if [ -z "${LIBPATH}" ]; then
+            echo "No brewed libffi found at ${LIBFFI_PREFIX}/lib" >&2
+            exit 2
+          fi
+          echo "Using brewed libffi: ${LIBPATH}"
+          cp "${LIBPATH}" .venv/lib/libffi.8.dylib
+
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Build .app with py2app
+        env:
+          # Ensure the build process sees the venv prefix
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+        run: |
+          source .venv/bin/activate
+          rm -rf build dist
+          python3 setup.py py2app
+
+      - name: Inspect bundled libffi
+        run: |
+          # Show the bundled libffi and its exports for debugging
+          LS="dist/The Example.app/Contents/Frameworks"
+          ls -l "$LS" || true
+          if [ -f "$LS/libffi.8.dylib" ]; then
+            /usr/bin/otool -L "$LS/libffi.8.dylib" || true
+            /usr/bin/nm -gU "$LS/libffi.8.dylib" | grep -i longdouble || true
+          fi
+
+      - name: Run smoke test against built bundle
+        env:
+          THE_EXAMPLE_SMOKE: '1'
+          THE_EXAMPLE_SMOKE_OUT: ${{ github.workspace }}/the-example-smoke-built.json
+        run: |
+          source .venv/bin/activate
+          # Run the built app executable (it will exit after smoke test)
+          "dist/The Example.app/Contents/MacOS/The Example" || true
+
+      - name: Upload built-smoke JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-json-built
+          path: the-example-smoke-built.json
