@@ -226,6 +226,33 @@ Code signing & notarization (distribution)
   - codesign --timestamp --options runtime --sign "Developer ID Application: <Your Identity>" "dist/The Example.app"
   - Use `altool` or `notarytool` to submit and staple notarization as required by Apple.
 
+Enabling codesigning in CI (toggle)
+-----------------------------------
+By default the CI build disables ad-hoc codesigning to avoid failures on hosted runners. When you're ready to enable codesigning in CI (for example to perform a proper signed release), you can set the environment variable `ENABLE_CODESIGN=1` for the build job. The `setup.py` looks for this variable and will skip the monkey-patch when it's present.
+
+Example (CI / macOS runner):
+
+```yaml
+# set the env var for the build step only — make sure your runner has access
+# to the signing identity (certificate installed in keychain) and that the
+# process can access it securely.
+env:
+  ENABLE_CODESIGN: '1'
+run: |
+  ./venv/bin/python setup.py py2app
+```
+
+Local testing
+-------------
+Locally you can enable codesigning by exporting the variable before building:
+
+```bash
+export ENABLE_CODESIGN=1
+python3 setup.py py2app
+```
+
+Note: proper codesigning for distribution requires a Developer ID certificate available to the build environment and (for notarization) Apple developer credentials configured for `altool`/`notarytool`. Keep these credentials in GitHub Secrets (or your CI secret store) and never commit them.
+
 Troubleshooting tips
 --------------------
 - If py2app fails to collect modules, install the missing package into the venv and re-run the build.

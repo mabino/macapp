@@ -162,10 +162,33 @@ OPTIONS = {
         'LSBackgroundOnly': False,
         'LSUIElement': False,
     },
-    # Avoid automatic ad-hoc codesigning during CI where codesign may fail.
-    # Setting an empty identity tells py2app not to attempt ad-hoc signing.
-    'codesign_identity': '',
 }
+
+# If running in GitHub Actions the macOS runner may not allow ad-hoc
+# codesigning. Some py2app versions don't accept a 'codesign_identity'
+# option, so instead detect the CI environment and monkey-patch py2app's
+# codesign helper to a no-op to avoid build-time failures. This must run
+# before setup() triggers the py2app build.
+try:
+    # Allow opting in to real codesigning by setting ENABLE_CODESIGN=1
+    enable_codesign = os.environ.get('ENABLE_CODESIGN', '').lower() in ('1', 'true', 'yes')
+    running_in_actions = os.environ.get('GITHUB_ACTIONS', '').lower() == 'true'
+    if running_in_actions and not enable_codesign:
+        try:
+            import py2app.util as _py2u
+
+            def _noop_codesign(bundle):
+                print('GITHUB_ACTIONS: skipping ad-hoc codesign for', bundle)
+
+            _py2u.codesign_adhoc = _noop_codesign
+        except Exception:
+            # If py2app isn't importable here or util API changes, just continue
+            pass
+    else:
+        if running_in_actions and enable_codesign:
+            print('GITHUB_ACTIONS: ENABLE_CODESIGN set — allowing codesign')
+except Exception:
+    pass
 
 setup(
     app=APP,
@@ -174,6 +197,8 @@ setup(
     options={'py2app': OPTIONS},
     setup_requires=['py2app'],
 )
+
+# (monkey-patch moved above setup())
 
 # Restore any renamed vendor dist-info directories
 try:
