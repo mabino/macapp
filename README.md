@@ -253,6 +253,32 @@ python3 setup.py py2app
 
 Note: proper codesigning for distribution requires a Developer ID certificate available to the build environment and (for notarization) Apple developer credentials configured for `altool`/`notarytool`. Keep these credentials in GitHub Secrets (or your CI secret store) and never commit them.
 
+CI secrets & quick steps (codesign + notarize)
+---------------------------------------------
+If you plan to enable signing and notarization in CI, create the following GitHub Secrets (names used in the provided `notarize-sample.yml`):
+
+- `SIGNING_CERT_P12` — base64 of your Developer ID Application `.p12` file
+- `SIGNING_CERT_PASSWORD` — password for the `.p12`
+- `KEYCHAIN_PASSWORD` — temporary keychain password used during CI
+- `APPLE_API_KEY` — base64 of your App Store Connect API key `.p8` (for `notarytool`)
+- `APPLE_API_KEY_ID` — App Store Connect key id (kid)
+- `APPLE_API_ISSUER` — App Store Connect issuer id (iss)
+- `APPLE_ID` — Apple ID for `altool` fallback (optional)
+- `APP_SPECIFIC_PASSWORD` — app-specific password for `altool` fallback (optional)
+
+Quick commands to prepare secrets locally (copy the output into the corresponding GitHub Secret):
+
+```bash
+# Base64-encode a .p12 for upload to GitHub Secrets
+base64 -w0 DeveloperID.p12 > DeveloperID.p12.b64
+# Base64-encode an App Store Connect .p8 for notarytool
+base64 -w0 AuthKey_ABC123XYZ.p8 > AuthKey_ABC123XYZ.p8.b64
+```
+
+Notes:
+- The release/notarization job must run on a macOS runner (codesigning requires macOS).
+- Keep the temporary keychain approach (import → use → delete) to avoid leaving credentials on the runner. See `.github/workflows/notarize-sample.yml` for a tested sequence.
+
 Troubleshooting tips
 --------------------
 - If py2app fails to collect modules, install the missing package into the venv and re-run the build.
@@ -265,4 +291,4 @@ Contributing
 
 License & contact
 ------------------
-This is a small demo for packaging and UI patterns; add a license file if you intend to redistribute. If you want me to initialize a git repo and make an initial commit, say the word and I'll run it for you.
+
