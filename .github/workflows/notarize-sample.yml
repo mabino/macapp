@@ -1,0 +1,110 @@
+name: "Sample: sign & notarize (manual)"
+
+# This is a manual, example workflow showing how to install a Developer
+# ID certificate, build a signed .app, and notarize it with Apple's
+# notarization services. It's intentionally run only on manual dispatch
+# (workflow_dispatch) and requires secrets to be populated before use.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  sign-and-notarize:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Create venv and install deps
+        run: |
+          python3 -m venv venv
+          ./venv/bin/python -m pip install --upgrade pip setuptools wheel
+          ./venv/bin/pip install -r requirements.txt
+
+      - name: Import Developer ID certificate into temporary keychain
+        if: ${{ secrets.SIGNING_CERT_P12 && secrets.SIGNING_CERT_PASSWORD && secrets.KEYCHAIN_PASSWORD }}
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # CERT_P12 is expected to be base64 encoded content of the .p12
+          echo "$SIGNING_CERT_P12" | base64 --decode > signing_cert.p12
+          # create a temporary keychain and import the p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import signing_cert.p12 -k ~/Library/Keychains/build.keychain -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/productsign
+          security list-keychains -s ~/Library/Keychains/build.keychain
+          security default-keychain -s ~/Library/Keychains/build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/build.keychain
+          # allow codesign/productbuild to access the imported private key
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/build.keychain
+
+      - name: Build signed app (enable codesign)
+        env:
+          ENABLE_CODESIGN: '1'
+        run: |
+          rm -rf build dist
+          ./venv/bin/python setup.py py2app
+
+      - name: Zip .app for notarization
+        run: |
+          cd dist
+          zip -qry The-Example-for-notarize.zip "The Example.app"
+          ls -lah The-Example-for-notarize.zip
+
+      - name: Notarize using notarytool (preferred)
+        if: ${{ secrets.APPLE_API_KEY && secrets.APPLE_API_KEY_ID && secrets.APPLE_API_ISSUER }}
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          # APPLE_API_KEY is expected to be the base64 encoded .p8 key content
+          echo "$APPLE_API_KEY" | base64 --decode > AuthKey.p8
+          xcrun notarytool submit dist/The-Example-for-notarize.zip --key AuthKey.p8 --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait --output-format json > notarize-result.json
+          cat notarize-result.json
+          # Staple the app after successful notarization
+          xcrun stapler staple "dist/The Example.app"
+
+      - name: Notarize using altool (fallback)
+        if: ${{ secrets.APPLE_ID && secrets.APP_SPECIFIC_PASSWORD }} && ! (secrets.APPLE_API_KEY && secrets.APPLE_API_KEY_ID && secrets.APPLE_API_ISSUER)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Submit with altool; this returns a RequestUUID that you must poll
+          xcrun altool --notarize-app -f dist/The-Example-for-notarize.zip --primary-bundle-id "com.example.theexample" -u "$APPLE_ID" -p "$APP_SPECIFIC_PASSWORD" | tee altool-submit.txt
+          # Extract RequestUUID for polling (simple grep; adapt as needed)
+          REQ=$(grep -Eo "RequestUUID = [A-F0-9-]+" altool-submit.txt | awk -F'= ' '{print $2}')
+          echo "Notarization request: $REQ"
+          # Poll status until success (naive polling loop)
+          while true; do
+            sleep 30
+            xcrun altool --notarization-info "$REQ" -u "$APPLE_ID" -p "$APP_SPECIFIC_PASSWORD" | tee altool-info.txt
+            if grep -q "Status: success" altool-info.txt; then
+              echo 'Notarization successful'
+              break
+            fi
+            if grep -q "Status: in progress" altool-info.txt; then
+              echo 'Still in progress; polling again...'
+              continue
+            fi
+            echo 'Notarization failed or unknown status'; cat altool-info.txt; exit 1
+          done
+          xcrun stapler staple "dist/The Example.app"
+
+      - name: Cleanup keychain
+        if: ${{ secrets.SIGNING_CERT_P12 && secrets.SIGNING_CERT_PASSWORD && secrets.KEYCHAIN_PASSWORD }}
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # remove the temporary keychain
+          security delete-keychain build.keychain || true
