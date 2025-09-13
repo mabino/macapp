@@ -51,8 +51,15 @@ jobs:
         run: |
           THE_EXAMPLE_SMOKE=1 THE_EXAMPLE_SMOKE_OUT=$(pwd)/dist/smoke_pruned.json dist/The\ Example.app/Contents/MacOS/The\ Example
 
-      - name: Upload pruned artifact
+      - name: Zip pruned .app
+        run: |
+          cd dist
+          # create reproducible zip (quiet, recurse, preserve symlinks)
+          zip -qry The-Example-macos-pruned.zip "The Example.app"
+          ls -lah The-Example-macos-pruned.zip
+
+      - name: Upload pruned artifact (zip)
         uses: actions/upload-artifact@v4
         with:
           name: The-Example-macos-pruned
-          path: dist/The\ Example.app
+          path: dist/The-Example-macos-pruned.zip
