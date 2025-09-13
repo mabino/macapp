@@ -6,3 +6,11 @@ PySide6>=6.5.0
 
 # py2app is used to build a macOS .app bundle from the Python script
 py2app>=0.28.8
+
+# Additional small libraries required at runtime and by packaging
+# These were previously present in local development environments; make
+# them explicit so CI and py2app include them in the bundle.
+jaraco.text>=4.0.0
+jaraco.functools>=3.0.0
+jaraco.context>=3.0.0
+more-itertools>=9.0.0
