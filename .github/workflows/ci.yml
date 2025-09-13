@@ -1,0 +1,58 @@
+name: CI - build & smoke
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-smoke:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Create venv and install deps
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+
+      - name: Run in-source smoke test
+        run: |
+          source venv/bin/activate
+          THE_EXAMPLE_SMOKE=1 THE_EXAMPLE_SMOKE_OUT=dist/smoke_in_source.json python3 main.py
+        continue-on-error: false
+
+      - name: Build testing bundle (no pruning)
+        run: |
+          source venv/bin/activate
+          rm -rf build dist
+          python3 setup.py py2app
+
+      - name: Run smoke test against testing bundle
+        run: |
+          THE_EXAMPLE_SMOKE=1 THE_EXAMPLE_SMOKE_OUT=$(pwd)/dist/smoke.json dist/The\ Example.app/Contents/MacOS/The\ Example
+
+      - name: Build pruned release bundle (moderate)
+        run: |
+          source venv/bin/activate
+          rm -rf build dist
+          PRUNE_BUNDLE=1 PRUNE_LEVEL=moderate python3 setup.py py2app
+
+      - name: Run smoke test against pruned bundle
+        run: |
+          THE_EXAMPLE_SMOKE=1 THE_EXAMPLE_SMOKE_OUT=$(pwd)/dist/smoke_pruned.json dist/The\ Example.app/Contents/MacOS/The\ Example
+
+      - name: Upload pruned artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: The-Example-macos-pruned
+          path: dist/The\ Example.app
