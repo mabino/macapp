@@ -16,23 +16,131 @@ import os
 import datetime
 import json
 import platform
+import plistlib
+from typing import Optional
 
 # Application version used by the smoke test and for diagnostics.
 __version__ = "0.1.0"
 
 class Preferences:
-    """A simple container for application preferences.
+    """Container for application preferences with plist persistence.
 
-    This class doesn't do persistence (saving to disk). It only stores
-    the in-memory state while the application is running. Storing
-    preferences in a small class like this makes it easy to pass
-    settings around the app and keep the UI code separate from data.
+    This implementation uses a plist file on disk. When running from
+    a bundled .app and a CFBundleIdentifier can be discovered the
+    preferences are stored in the standard Preferences location for
+    that bundle identifier (~/Library/Preferences/<bundle_id>.plist).
+    When not bundled we fall back to a sensible path under
+    ~/Library/Preferences using a stable application identifier.
     """
     def __init__(self):
-        # Default preference values. A novice should think of these
-        # as simple on/off flags that control features in the UI.
+        # Default preference values
         self.feature_a_enabled = True
         self.feature_b_enabled = False
+
+        # Location where preferences will be read/written lazily
+        self._prefs_path: Optional[str] = None
+
+    @staticmethod
+    def _guess_bundle_identifier() -> Optional[str]:
+        """Try to determine a bundle identifier when running from a .app.
+
+        We try a few best-effort methods: inspect __file__ for a .app
+        ancestor and read its Info.plist CFBundleIdentifier. This is
+        intentionally conservative and does not require PyObjC.
+        """
+        try:
+            # Walk up from this file looking for an .app bundle
+            path = os.path.abspath(__file__)
+            parts = path.split(os.sep)
+            for i in range(len(parts) - 1, 0, -1):
+                if parts[i].endswith('.app'):
+                    info_plist = os.path.join(os.sep, *parts[: i + 1], 'Contents', 'Info.plist')
+                    if os.path.exists(info_plist):
+                        try:
+                            with open(info_plist, 'rb') as f:
+                                data = plistlib.load(f)
+                            bid = data.get('CFBundleIdentifier')
+                            if bid:
+                                return bid
+                        except Exception:
+                            return None
+            return None
+        except Exception:
+            return None
+
+    def _prefs_file_path(self) -> str:
+        """Return the filesystem path to the plist we'll use for storing prefs."""
+        if self._prefs_path:
+            return self._prefs_path
+
+        # Allow tests or callers to override the prefs file path via an
+        # environment variable. This keeps automated tests from writing
+        # into the user's real ~/Library area.
+        env_override = os.environ.get('THE_EXAMPLE_PREFS_PATH')
+        if env_override:
+            self._prefs_path = os.path.expanduser(env_override)
+            return self._prefs_path
+
+        # Prefer a bundle-id-based path when possible (macOS standard)
+        bundle_id = None
+        if sys.platform == 'darwin':
+            bundle_id = self._guess_bundle_identifier()
+
+        if bundle_id:
+            # If the app is sandboxed its container path would be used
+            # by the system; we attempt the container preferences path
+            # first, then fall back to ~/Library/Preferences.
+            container_pref = os.path.expanduser(f'~/Library/Containers/{bundle_id}/Data/Library/Preferences/{bundle_id}.plist')
+            if os.path.exists(os.path.dirname(container_pref)):
+                self._prefs_path = container_pref
+                return self._prefs_path
+            # fallback
+            self._prefs_path = os.path.expanduser(f'~/Library/Preferences/{bundle_id}.plist')
+            return self._prefs_path
+
+        # Generic fallback: use application name to build a stable filename
+        app_name = QCoreApplication.applicationName() or 'the-example'
+        safe_name = ''.join(c if c.isalnum() or c in '.-_ ' else '_' for c in app_name).strip() or 'the-example'
+        self._prefs_path = os.path.expanduser(f'~/Library/Preferences/{safe_name}.plist')
+        return self._prefs_path
+
+    def load(self):
+        """Load preferences from disk. Missing values use defaults."""
+        path = self._prefs_file_path()
+        try:
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    data = plistlib.load(f)
+                # Only set known keys to avoid surprising data from other apps
+                self.feature_a_enabled = bool(data.get('feature_a_enabled', self.feature_a_enabled))
+                self.feature_b_enabled = bool(data.get('feature_b_enabled', self.feature_b_enabled))
+        except Exception:
+            # Loading should never crash the app; fall back to defaults.
+            pass
+
+    def save(self):
+        """Persist preferences to a plist file (atomic write).
+
+        We create parent directories as needed and write atomically
+        by writing to a temporary file then renaming it.
+        """
+        path = self._prefs_file_path()
+        try:
+            parent = os.path.dirname(path)
+            os.makedirs(parent, exist_ok=True)
+            tmp = path + '.tmp'
+            data = {
+                'feature_a_enabled': bool(self.feature_a_enabled),
+                'feature_b_enabled': bool(self.feature_b_enabled),
+                'version': __version__
+            }
+            with open(tmp, 'wb') as f:
+                plistlib.dump(data, f)
+            # Atomic replace
+            os.replace(tmp, path)
+        except Exception:
+            # Don't raise; best-effort persistence only.
+            pass
 
 class PreferencesDialog(QDialog):
     """
@@ -91,6 +199,11 @@ class SimpleMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.preferences = Preferences()
+        # Load persisted preferences on startup (best-effort)
+        try:
+            self.preferences.load()
+        except Exception:
+            pass
 
         # Set the window title and a fixed size. On macOS it's common to
         # have windows that are not resizable for simple demos; remove
@@ -265,6 +378,11 @@ class SimpleMainWindow(QMainWindow):
         dialog = PreferencesDialog(self.preferences, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.preferences = dialog.get_preferences()
+            # Persist the updated preferences
+            try:
+                self.preferences.save()
+            except Exception:
+                pass
             self._update_ui_from_preferences()
 
     def _update_ui_from_preferences(self):
@@ -392,6 +510,11 @@ def main():
                 dlg.feature_b_checkbox.setChecked(not dlg.feature_b_checkbox.isChecked())
                 prefs_after = dlg.get_preferences()
                 prefs_ok = (prefs_after.feature_a_enabled == dlg.feature_a_checkbox.isChecked() and prefs_after.feature_b_enabled == dlg.feature_b_checkbox.isChecked())
+                # Persist preferences so tests can inspect the plist file.
+                try:
+                    prefs_after.save()
+                except Exception:
+                    pass
             except Exception:
                 prefs_after = None
                 prefs_ok = False
